@@ -143,6 +143,7 @@ const AI_INSTRUCTION = `
   4.上記のどれも当てはまらない場合、カテゴリは「その他」にすること
 
 画像を解析して、上記の形式で正確にJSON出力してください。JSONのみを出力し、他の説明は不要です。
+
 `.trim();
 
 // ============================================================================
@@ -185,34 +186,37 @@ async function downloadImageFromS3(s3Client: S3Client, bucket: string, filePath:
  * @param imageData - 画像データ（Buffer形式）
  * @returns 抽出されたテキスト
  */
-// async function extractTextFromImage(aiClient: BedrockRuntimeClient, imageData: Buffer): Promise<{ text: string }> {
 async function extractOrderFromImage(aiClient: BedrockRuntimeClient, imageData: Buffer): Promise<OrderData> {
   console.log(`🤖 AI注文情報抽出処理を開始...`);
 
-  // ============================================================================
-  // 【5-1. Base64エンコード】
-  // バイナリデータを文字列に変換（API送信のため）
-  // ============================================================================
+  // 簡単な画像検証のみ
+  const validation = await validateImageForBedrock(imageData);
+
+  if (validation.warnings.length > 0) {
+    console.log(`⚠️ 画像警告:`, validation.warnings);
+  }
+
+  if (!validation.isValid) {
+    console.error(`❌ 画像検証失敗`);
+    throw new Error('画像が無効です');
+  }
+
+  console.log(`📦 画像サイズ: ${(validation.size / 1024).toFixed(1)}KB - 処理開始`);
+
   const base64Image = imageData.toString('base64');
 
-  // ============================================================================
-  // 【5-2. Bedrock APIリクエストの構築】
-  // Day2で学習したBedrock API呼び出し形式
-  // ============================================================================
   const requestData = {
     anthropic_version: AI_SETTINGS.version,
     max_tokens: AI_SETTINGS.maxTokens,
     temperature: AI_SETTINGS.temperature,
     top_p: AI_SETTINGS.topP,
     top_k: AI_SETTINGS.topK,
-    // システムプロンプト：AIの役割を定義
-    system: 'あなたは注文書画像から構造化データを抽出する専門家です。正確なJSON形式で出力してください。',
+    // シンプルなシステムプロンプト
+    system: 'あなたは日本語注文書画像から正確に情報を抽出する専門AIです。画像の品質を活かして精密に文字認識を行ってください。',
     messages: [{
       role: 'user',
       content: [
-        // テキスト指示
         { type: 'text', text: AI_INSTRUCTION },
-        // 画像データ
         {
           type: 'image',
           source: {
@@ -225,105 +229,104 @@ async function extractOrderFromImage(aiClient: BedrockRuntimeClient, imageData: 
     }]
   };
 
-  // ============================================================================
-  // 【5-3. Bedrock API呼び出し】
-  // ============================================================================
-  const command = new InvokeModelCommand({
-    modelId: AI_SETTINGS.modelName,
-    body: JSON.stringify(requestData)
-  });
+  // シンプルなAPI呼び出し（リトライ機能簡素化）
+  let response;
 
-  const response = await aiClient.send(command);
+  try {
+    console.log(`🚀 Bedrock API呼び出し開始...`);
+    const command = new InvokeModelCommand({
+      modelId: AI_SETTINGS.modelName,
+      body: JSON.stringify(requestData)
+    });
+
+    response = await aiClient.send(command);
+    console.log(`✅ Bedrock API呼び出し成功`);
+
+  } catch (error: any) {
+    console.error(`❌ Bedrock API呼び出し失敗:`, error.message);
+
+    // 画像サイズエラーの場合の詳細ログ
+    if (error.message?.includes('image dimensions exceed')) {
+      console.error(`💡 解決方法: フロントエンド側で画像サイズを小さくしてください`);
+    }
+
+    throw new Error(`Bedrock API呼び出しに失敗しました: ${error.message}`);
+  }
+
+  // レスポンス処理
   const responseText = new TextDecoder().decode(response.body!);
   const responseData = JSON.parse(responseText);
 
-  // ============================================================================
-  // 【5-4. レスポンスからテキストを抽出】
-  // ============================================================================
   const textContent = responseData.content.find(
     (item: any) => item.type === 'text'
   );
 
-  console.log(`✅ 注文情報抽出完了`);
-  console.log(`抽出されたテキスト: ${textContent.text}`);
-  // return { text: textContent.text };
+  console.log(`✅ AI応答取得完了 (${textContent.text.length}文字)`);
 
-  // JSONを解析
+  // JSON解析（エラーハンドリング簡素化）
   try {
     let jsonText = textContent.text.trim();
 
-    // デバッグ用ログ
-    console.log('解析前のテキスト:', jsonText);
-    console.log('テキストの長さ:', jsonText.length);
-    console.log('テキストの型:', typeof jsonText);
-
-    // JSONブロック記法を除去
-    if (jsonText.includes('```json')) {
-      const jsonMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/);
+    // 基本的なJSONクリーニングのみ
+    if (jsonText.includes('```')) {
+      const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ||
+        jsonText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        jsonText = jsonMatch[1].trim();
-      }
-    } else if (jsonText.includes('```')) {
-      const jsonMatch = jsonText.match(/```\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[1].trim();
+        jsonText = jsonMatch[1] || jsonMatch[0];
       }
     }
 
-    // 空文字チェック
-    if (!jsonText) {
-      throw new Error('JSONテキストが空です。');
-    }
+    // 基本的なクリーニング
+    jsonText = jsonText.trim();
 
-    console.log('クリーニング後のJSON:', jsonText);
-
+    console.log(`🔍 JSON解析開始...`);
     const orderData = JSON.parse(jsonText);
 
-    // ★★★ ここで文字列を数値に変換 ★★★
+    // シンプルなデータ検証と型変換
     const validatedOrderData = {
       orderHeader: {
-        orderId: orderData.orderHeader?.orderId || `ORDER_${Date.now()}`,
-        orderDate: orderData.orderHeader?.orderDate || new Date().toISOString().split('T')[0],
-        subtotal: parseFloat(orderData.orderHeader?.subtotal) || 0,      // 文字列→数値変換
-        shippingFee: parseFloat(orderData.orderHeader?.shippingFee) || 0, // 文字列→数値変換
-        totalAmount: parseFloat(orderData.orderHeader?.totalAmount) || 0,  // 文字列→数値変換
-        category: orderData.orderHeader?.category || `カテゴリ不明`
+        orderId: String(orderData.orderHeader?.orderId || `ORDER_${Date.now()}`),
+        orderDate: String(orderData.orderHeader?.orderDate || new Date().toISOString().split('T')[0]),
+        subtotal: Number(orderData.orderHeader?.subtotal) || 0,
+        shippingFee: Number(orderData.orderHeader?.shippingFee) || 0,
+        totalAmount: Number(orderData.orderHeader?.totalAmount) || 0,
+        category: String(orderData.orderHeader?.category || 'その他')
       },
       orderDetails: Array.isArray(orderData.orderDetails)
         ? orderData.orderDetails.map((detail: any, index: number) => ({
-          itemId: detail.itemId || `ITEM_${String(index + 1).padStart(3, '0')}`,
-          productName: detail.productName || '商品名不明',
-          unitPrice: parseFloat(detail.unitPrice) || 0,    // 文字列→数値変換
-          quantity: parseInt(detail.quantity) || 1,        // 文字列→整数変換
-          subtotal: parseFloat(detail.subtotal) || 0       // 文字列→数値変換
+          itemId: String(detail.itemId || `ITEM_${String(index + 1).padStart(3, '0')}`),
+          productName: String(detail.productName || '商品名不明').trim(),
+          unitPrice: Number(detail.unitPrice) || 0,
+          quantity: Number(detail.quantity) || 1,
+          subtotal: Number(detail.subtotal) || 0
         }))
         : []
     };
 
-    console.log('型変換後のorderData:', JSON.stringify(validatedOrderData, null, 2));
-
-    // 基本的な構造チェック
-    if (!orderData.orderHeader || !orderData.orderDetails) {
-      throw new Error('必要なプロパティが不足しています');
-    }
-
-    // return orderData;
+    console.log(`✅ データ検証完了 - 商品数: ${validatedOrderData.orderDetails.length}`);
     return validatedOrderData;
-  } catch (error) {
-    console.error('JSON解析エラー:', error);
-    console.error('解析しようとしたテキスト:', textContent.text);
 
-    // フォールバック: 空のデータ構造を返す
+  } catch (error) {
+    console.error('❌ JSON解析エラー:', error);
+    console.error('解析対象テキスト（最初の500文字）:', textContent.text.substring(0, 500));
+
+    // シンプルなフォールバック
     return {
       orderHeader: {
-        orderId: 'ERROR_' + Date.now(),
+        orderId: `ERROR_${Date.now()}`,
         orderDate: new Date().toISOString().split('T')[0],
         subtotal: 0,
         shippingFee: 0,
         totalAmount: 0,
-        category: 'category'
+        category: 'エラー'
       },
-      orderDetails: []
+      orderDetails: [{
+        itemId: 'ERROR_001',
+        productName: 'JSON解析エラーが発生しました',
+        unitPrice: 0,
+        quantity: 1,
+        subtotal: 0
+      }]
     };
   }
 }
@@ -414,6 +417,41 @@ async function saveOrderToDatabase(databaseClient: any, orderData: OrderData, fi
   }
 }
 
+/**
+ * 簡素化された画像検証関数
+ */
+async function validateImageForBedrock(imageBuffer: Buffer): Promise<{
+  isValid: boolean;
+  size: number;
+  warnings: string[];
+}> {
+  console.log(`🔍 基本画像検証開始...`);
+
+  const size = imageBuffer.length;
+  const warnings: string[] = [];
+
+  console.log(`📊 画像ファイルサイズ: ${(size / 1024).toFixed(1)}KB`);
+
+  let isValid = true;
+
+  // 基本的なサイズチェックのみ
+  if (size > 3 * 1024 * 1024) { // 3MB
+    warnings.push(`ファイルサイズが大きいです: ${(size / 1024 / 1024).toFixed(1)}MB`);
+    // 警告のみ、処理は継続
+  }
+
+  if (size < 5 * 1024) { // 5KB未満
+    warnings.push(`ファイルサイズが小さすぎます: ${(size / 1024).toFixed(1)}KB`);
+    isValid = false;
+  }
+
+  return {
+    isValid,
+    size,
+    warnings
+  };
+}
+
 // ============================================================================
 // 【6. メインのLambda関数】
 // S3イベントを受け取って処理を実行する関数
@@ -461,6 +499,7 @@ export const handler = async (event: S3Event) => {
 
       // Step1: S3から画像をダウンロード
       const imageData = await downloadImageFromS3(s3Client, fileInfo.bucket, fileInfo.key);
+      console.log(`📥 画像ダウンロード完了: ${(imageData.length / 1024).toFixed(1)}KB`);
 
       // Step2: AIでOCR処理
       // const ocrResult = await extractTextFromImage(aiClient, imageData);
@@ -476,6 +515,7 @@ export const handler = async (event: S3Event) => {
       await saveOrderToDatabase(databaseClient, orderData, fileName, fileInfo.key, orderData);
 
       console.log(`🎉 ${fileName} の処理が完了しました！`);
+      console.log(`📊 処理結果: 注文ID=${orderData.orderHeader.orderId}, 商品数=${orderData.orderDetails.length}`);
     } catch (error) {
       console.error(`❌ ${fileName} の処理中にエラーが発生:`, error);
       // エラーを再スローして失敗を明確にする

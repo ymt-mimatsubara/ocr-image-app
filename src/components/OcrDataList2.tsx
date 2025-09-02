@@ -30,6 +30,7 @@ import '@aws-amplify/ui-react/styles.css';
 
 // 型定義
 type OcrDataType = Schema['OrderHeader']['type'];
+type OrderDetailType = Schema['OrderDetail']['type'];
 
 type ModalState = {
     open: boolean;
@@ -64,36 +65,6 @@ const truncateText = (text: string, maxLength: number) => {
     return text.length > maxLength ? `${text.substring(0, maxLength)}...` : text;
 };
 
-const parseContentAsText = (content: any): string => {
-    if (!content) return 'データなし';
-
-    if (typeof content === 'string') {
-        try {
-            const parsed = JSON.parse(content);
-
-            if (parsed.ocrText && typeof parsed.ocrText === 'string') {
-                const formattedOcrText = parsed.ocrText.replace(/\\n/g, '\n');
-                const otherFields = { ...parsed };
-                delete otherFields.ocrText;
-
-                let result = '';
-                if (Object.keys(otherFields).length > 0) {
-                    result += JSON.stringify(otherFields, null, 2) + '\n\n';
-                }
-                result += 'OCRテキスト:\n' + formattedOcrText;
-
-                return result;
-            }
-
-            return JSON.stringify(parsed, null, 2);
-        } catch {
-            return content;
-        }
-    }
-
-    return JSON.stringify(content, null, 2);
-};
-
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('ja-JP', {
         style: 'currency',
@@ -105,6 +76,8 @@ export default function OcrDataList() {
     // データ管理の状態
     const [ocrData, setOcrData] = useState<OcrDataType[]>([]);
     const [loading, setLoading] = useState(true);
+    const [orderDetails, setOrderDetails] = useState<OrderDetailType[]>([]);
+    const [loadingDetails, setLoadingDetails] = useState(false);
 
     // ページネーション状態
     const [page, setPage] = useState(0);
@@ -123,6 +96,26 @@ export default function OcrDataList() {
         itemToDelete: null
     });
 
+    // OrderDetail取得関数
+    const fetchOrderDetails = useCallback(async (orderHeaderId: string) => {
+        try {
+            setLoadingDetails(true);
+            const { data: details } = await client.models.OrderDetail.list({
+                filter: {
+                    orderHeaderId: {
+                        eq: orderHeaderId
+                    }
+                }
+            });
+            setOrderDetails(details || []);
+        } catch (error) {
+            console.error('OrderDetail取得エラー:', error);
+            setOrderDetails([]);
+        } finally {
+            setLoadingDetails(false);
+        }
+    }, []);
+
     // カスタムフック：OCRデータ取得
     const fetchOcrData = useCallback(async () => {
         setLoading(true);
@@ -133,7 +126,7 @@ export default function OcrDataList() {
 
     useEffect(() => {
         fetchOcrData();
-    }, []);
+    }, [fetchOcrData]);
 
     // リアルタイム更新のためのサブスクリプション
     useEffect(() => {
@@ -161,13 +154,19 @@ export default function OcrDataList() {
             open: true,
             selectedItem: item
         });
-    }, []);
+
+        // OrderDetailを取得
+        fetchOrderDetails(item.orderId);
+    }, [fetchOrderDetails]);
 
     const handleCloseModal = useCallback(() => {
         setModalState({
             open: false,
             selectedItem: null
         });
+
+        // OrderDetailをクリア
+        setOrderDetails([]);
     }, []);
 
     const handleDeleteClick = useCallback((event: React.MouseEvent, item: OcrDataType) => {
@@ -236,7 +235,6 @@ export default function OcrDataList() {
         } catch (error) {
             console.error('削除処理でエラーが発生しました:', error);
             setDeleteState(prev => ({ ...prev, loading: false }));
-            // エラーハンドリング（必要に応じてアラート表示など）
         }
     }, [deleteState.itemToDelete, modalState]);
 
@@ -246,21 +244,73 @@ export default function OcrDataList() {
         [ocrData, page, rowsPerPage]
     );
 
-    // OCRテキスト表示コンポーネント
-    const OcrTextDisplay = ({ content }: { content: any }) => {
-        const textContent = parseContentAsText(content);
+    // OrderDetailテーブルコンポーネント
+    const OrderDetailTable = useCallback(() => {
+        if (loadingDetails) {
+            return (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
+                    <CircularProgress size={24} />
+                    <Typography variant="body2" sx={{ ml: 2 }}>
+                        注文詳細を読み込み中...
+                    </Typography>
+                </Box>
+            );
+        }
+
+        if (orderDetails.length === 0) {
+            return (
+                <Box sx={{ textAlign: 'center', p: 2 }}>
+                    <Typography variant="body2" color="textSecondary">
+                        注文詳細データがありません
+                    </Typography>
+                </Box>
+            );
+        }
 
         return (
-            <Box sx={{ border: '1px solid #ccc', borderRadius: 1, p: 2, maxHeight: '400px', overflow: 'auto' }}>
-                <Typography component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                    {textContent}
-                </Typography>
-            </Box>
+            <TableContainer sx={{ maxHeight: 400, overflow: 'auto' }}>
+                <Table size="small" stickyHeader>
+                    <TableHead>
+                        <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>商品名</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold', textAlign: 'right' }}>単価</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold', textAlign: 'center' }}>数量</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold', textAlign: 'right' }}>小計</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {orderDetails.map((detail, index) => (
+                            <TableRow key={detail.itemId || `detail-${index}`} hover>
+                                <TableCell>
+                                    <Typography variant="body2">
+                                        {detail.productName || 'N/A'}
+                                    </Typography>
+                                </TableCell>
+                                <TableCell align="right">
+                                    <Typography variant="body2">
+                                        {detail.unitPrice ? formatCurrency(detail.unitPrice) : 'N/A'}
+                                    </Typography>
+                                </TableCell>
+                                <TableCell align="center">
+                                    <Typography variant="body2">
+                                        {detail.quantity || 0}
+                                    </Typography>
+                                </TableCell>
+                                <TableCell align="right">
+                                    <Typography variant="body2" fontWeight="medium">
+                                        {detail.subtotal ? formatCurrency(detail.subtotal) : 'N/A'}
+                                    </Typography>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </TableContainer>
         );
-    };
+    }, [loadingDetails, orderDetails]);
 
     // 詳細モーダルコンポーネント
-    const DetailModal = () => {
+    const DetailModal = useCallback(() => {
         if (!modalState.selectedItem) return null;
 
         const { selectedItem } = modalState;
@@ -368,7 +418,7 @@ export default function OcrDataList() {
                         <Grid size={{ xs: 12, md: 5 }}>
                             <Paper variant="outlined" sx={{ p: 2 }}>
                                 <Typography variant="h6" gutterBottom color="primary">
-                                    画像
+                                    アップロード画像
                                 </Typography>
                                 <Box sx={{ textAlign: 'center', border: '1px solid #ddd', borderRadius: 1, p: 2, backgroundColor: '#fafafa' }}>
                                     {selectedItem.documentUri ? (
@@ -392,13 +442,27 @@ export default function OcrDataList() {
                             </Paper>
                         </Grid>
 
-                        {/* OCRテキスト表示 */}
+                        {/* 注文詳細一覧表示 */}
                         <Grid size={{ xs: 12, md: 7 }}>
                             <Paper variant="outlined" sx={{ p: 2 }}>
                                 <Typography variant="h6" gutterBottom color="primary">
-                                    OCR抽出テキスト
+                                    注文詳細一覧
                                 </Typography>
-                                <OcrTextDisplay content={selectedItem.content} />
+                                <OrderDetailTable />
+
+                                {/* 合計表示 */}
+                                {orderDetails.length > 0 && (
+                                    <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #ddd' }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <Typography variant="body2" color="textSecondary">
+                                                商品点数: {orderDetails.reduce((sum, detail) => sum + (detail.quantity || 0), 0)}点
+                                            </Typography>
+                                            <Typography variant="h6" color="primary" fontWeight="bold">
+                                                小計: {formatCurrency(orderDetails.reduce((sum, detail) => sum + (detail.subtotal || 0), 0))}
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                )}
                             </Paper>
                         </Grid>
                     </Grid>
@@ -421,10 +485,10 @@ export default function OcrDataList() {
                 </Paper>
             </Modal>
         );
-    };
+    }, [modalState, orderDetails, handleCloseModal, OrderDetailTable]);
 
     // メインコンテンツ
-    const MainContent = () => {
+    const MainContent = useCallback(() => {
         if (loading) {
             return (
                 <Box sx={{ textAlign: 'center', p: 3 }}>
@@ -467,10 +531,10 @@ export default function OcrDataList() {
                 />
             </>
         );
-    };
+    }, [loading, ocrData.length, displayedData, handleRowClick, handleDeleteClick, page, rowsPerPage, handleChangePage, handleChangeRowsPerPage]);
 
-    // データテーブルコンポーネント - 修正版（hydrationエラー対策）
-    const DataTable = ({
+    // データテーブルコンポーネント
+    const DataTable = useCallback(({
         data,
         onRowClick,
         onDeleteClick
@@ -487,7 +551,7 @@ export default function OcrDataList() {
                         <TableCell sx={{ fontWeight: 'bold', minWidth: 200 }}>ドキュメント名</TableCell>
                         <TableCell sx={{ fontWeight: 'bold', minWidth: 140 }}>処理日時</TableCell>
                         <TableCell sx={{ fontWeight: 'bold', minWidth: 100 }}>カテゴリ</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', width: 80, textAlign: 'center' }}>操作</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', width: 80, textAlign: 'center' }}>削除</TableCell>
                     </TableRow>
                 </TableHead>
                 <TableBody>
@@ -562,7 +626,7 @@ export default function OcrDataList() {
                 </TableBody>
             </Table>
         </TableContainer>
-    );
+    ), []);
 
     return (
         <>
