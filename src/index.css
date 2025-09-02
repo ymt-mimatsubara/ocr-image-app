@@ -4,9 +4,11 @@ body {
   align-items: center;      /* 縦方向中央 */
   min-height: 100vh;        /* 画面全体の高さ確保 */
   margin: 0;
+  padding: 0;
 }
 #root > div {
-  width: 700px;       /* 固定幅 */
+  /* width: 700px;       固定幅 */
+  width: 100%; 
 }
 
 :root {

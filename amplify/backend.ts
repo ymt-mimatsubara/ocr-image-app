@@ -43,7 +43,6 @@ processImageOcrLambda.addToRolePolicy(s3Statement);
 // 【4. Bedrock実行権限の追加】
 // Lambda関数がBedrockのAIモデルを実行できるようにする
 // Day2で学習したBedrock機能をLambda関数から使用
-// 開発の段階ではすべてのリソースを許可しておいて、本番運用の段階でリソースを絞っていく
 // ============================================================================
 const bedrockStatement = new iam.PolicyStatement({
   // 許可する操作：Bedrockモデルの実行
