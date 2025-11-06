@@ -6,7 +6,6 @@ import {
   AppBar,
   Toolbar,
   Typography,
-  Container,
   Box,
   Paper,
   Grid,
@@ -17,6 +16,8 @@ import {
   LinearProgress,
   Chip,
   Alert,
+  Tabs,
+  Tab,
 } from "@mui/material";
 import {
   CloudUpload as CloudUploadIcon,
@@ -27,9 +28,14 @@ import {
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   AutoFixHigh as AutoFixHighIcon,
+  ShoppingCart as ShoppingCartIcon,
+  Analytics as AnalyticsIcon,
+  Store as StoreIcon,
 } from "@mui/icons-material";
 import OcrDataList from "./components/OcrDataList2";
 import OrderCategoryChart from './components/OrderCategoryChart';
+import LatestOrders from './components/LatestOrders';
+import CategoryEcLinks from './components/category-ec-links';
 
 // ファイル処理状態の型定義
 interface FileProcessingStatus {
@@ -211,6 +217,7 @@ export default function App() {
     currentStep: '',
     progress: 0
   });
+  const [currentTab, setCurrentTab] = useState(0);
 
   // ファイル削除関数
   const removeFile = (key?: string) => {
@@ -259,6 +266,11 @@ export default function App() {
 
   // 状態定義に追加
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
+
+  // タブ変更ハンドラー
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setCurrentTab(newValue);
+  };
 
   // enhancedProcessFile関数（完全修正版）
   const enhancedProcessFile = async ({ file, key }: { file: File; key: string }) => {
@@ -341,8 +353,7 @@ export default function App() {
         const {
           processedFile,
           optimizations,
-          originalInfo,
-          processedInfo
+          originalInfo
         } = await preprocessImageForOCR(file, file.name);
 
         // 完了段階
@@ -427,15 +438,17 @@ export default function App() {
       <Box sx={{
         flexGrow: 1,
         minHeight: '100vh',
+        width: '100%',
+        maxWidth: '100vw',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: '#f8f9fa'
+        backgroundColor: '#f8f9fa',
+        overflow: 'hidden'
       }}>
         {/* ヘッダー */}
         <AppBar
           position="static"
           sx={{
-            mb: 3,
             backgroundColor: '#31BCD4',
             border: '2px solid #2BA8C4',
             borderRadius: 0,
@@ -466,16 +479,67 @@ export default function App() {
           </Toolbar>
         </AppBar>
 
+        {/* タブナビゲーション */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+          <Box sx={{ px: 0 }}>
+            <Tabs 
+              value={currentTab} 
+              onChange={handleTabChange} 
+              sx={{
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  color: '#666',
+                  '&.Mui-selected': {
+                    color: '#31BCD4'
+                  }
+                },
+                '& .MuiTabs-indicator': {
+                  backgroundColor: '#31BCD4',
+                  height: 3
+                }
+              }}
+            >
+              <Tab 
+                icon={<CloudUploadIcon />} 
+                label="画像アップロード" 
+                iconPosition="start"
+              />
+              <Tab 
+                icon={<ShoppingCartIcon />} 
+                label="最新注文情報" 
+                iconPosition="start"
+              />
+              <Tab 
+                icon={<AnalyticsIcon />} 
+                label="データ分析" 
+                iconPosition="start"
+              />
+              <Tab 
+                icon={<StoreIcon />} 
+                label="ECサイト" 
+                iconPosition="start"
+              />
+            </Tabs>
+          </Box>
+        </Box>
+
         {/* メインコンテンツ */}
-        <Container
-          maxWidth={false}
+        <Box
           sx={{
-            px: { xs: 2, sm: 3, md: 4 }
+            px: 0,
+            width: '100%',
+            maxWidth: '100vw',
+            flex: 1,
+            overflowX: 'auto'
           }}
         >
-          <Grid container spacing={3}>
-            {/* 画像アップロードセクション */}
-            <Grid size={{ xs: 12, lg: 4 }}>
+          {/* タブ0: 画像アップロード */}
+          {currentTab === 0 && (
+            <Grid container spacing={3}>
+              {/* 画像アップロードセクション */}
+              <Grid size={{ xs: 12, lg: 4 }}>
               <Card sx={{
                 height: 'fit-content',
                 minHeight: 400,
@@ -546,7 +610,7 @@ export default function App() {
                         getMaxFilesErrorText: (count) => `ファイル数が上限（${count}）を超えています`,
                         getFileSizeErrorText: (sizeText) => `ファイルサイズが大きすぎます（${sizeText}）`,
                         getPausedText: (percentage) => `一時停止中... ${percentage}%`,
-                        getFilesUploadedText: (count) => ``
+                        getFilesUploadedText: (_count) => ``
                       }}
                     />
 
@@ -770,46 +834,102 @@ export default function App() {
                 </CardContent>
               </Card>
             </Grid>
-
-            {/* カテゴリ別売上分析セクション */}
-            <Grid size={{ xs: 12 }}>
-              <Card sx={{
-                boxShadow: 3,
-                border: '2px solid #31BCD4',
-                borderRadius: 2,
-                '&:hover': {
-                  boxShadow: 6,
-                  borderColor: '#2BA8C4',
-                  transform: 'translateY(-2px)',
-                  transition: 'all 0.3s ease'
-                }
-              }}>
-                <CardContent sx={{ p: 4 }}>
-                  <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    mb: 4,
-                    pb: 2,
-                    borderBottom: '2px solid #31BCD4'
-                  }}>
-                    <PieChartIcon sx={{ mr: 1, color: '#31BCD4', fontSize: 28 }} />
-                    <Typography variant="h5" component="h2" sx={{ color: '#31BCD4', fontWeight: 600 }}>
-                      グッズ注文データ
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    border: '1px solid #e0e0e0',
-                    borderRadius: 1,
-                    p: 2,
-                    backgroundColor: 'rgba(49, 188, 212, 0.02)'
-                  }}>
-                    <OrderCategoryChart />
-                  </Box>
-                </CardContent>
-              </Card>
             </Grid>
-          </Grid>
-        </Container>
+          )}
+
+          {/* タブ1: 最新注文情報 */}
+          {currentTab === 1 && (
+            <Box>
+              <LatestOrders />
+            </Box>
+          )}
+
+          {/* タブ2: データ分析 */}
+          {currentTab === 2 && (
+            <Grid container spacing={3}>
+              {/* カテゴリ別注文分析セクション */}
+              <Grid size={{ xs: 12 }}>
+                <Card sx={{
+                  boxShadow: 3,
+                  border: '2px solid #31BCD4',
+                  borderRadius: 2,
+                  '&:hover': {
+                    boxShadow: 6,
+                    borderColor: '#2BA8C4',
+                    transform: 'translateY(-2px)',
+                    transition: 'all 0.3s ease'
+                  }
+                }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Box sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      mb: 4,
+                      pb: 2,
+                      borderBottom: '2px solid #31BCD4'
+                    }}>
+                      <PieChartIcon sx={{ mr: 1, color: '#31BCD4', fontSize: 28 }} />
+                      <Typography variant="h5" component="h2" sx={{ color: '#31BCD4', fontWeight: 600 }}>
+                        グッズ注文データ
+                      </Typography>
+                    </Box>
+                    <Box sx={{
+                      border: '1px solid #e0e0e0',
+                      borderRadius: 1,
+                      p: 2,
+                      backgroundColor: 'rgba(49, 188, 212, 0.02)'
+                    }}>
+                      <OrderCategoryChart />
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          )}
+
+          {/* タブ3: ECサイト */}
+          {currentTab === 3 && (
+            <Grid container spacing={3}>
+              <Grid size={{ xs: 12 }}>
+                <Card sx={{
+                  boxShadow: 3,
+                  border: '2px solid #31BCD4',
+                  borderRadius: 2,
+                  '&:hover': {
+                    boxShadow: 6,
+                    borderColor: '#2BA8C4',
+                    transform: 'translateY(-2px)',
+                    transition: 'all 0.3s ease'
+                  }
+                }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Box sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      mb: 4,
+                      pb: 2,
+                      borderBottom: '2px solid #31BCD4'
+                    }}>
+                      <StoreIcon sx={{ mr: 1, color: '#31BCD4', fontSize: 28 }} />
+                      <Typography variant="h5" component="h2" sx={{ color: '#31BCD4', fontWeight: 600 }}>
+                        公式ECサイト
+                      </Typography>
+                    </Box>
+                    <Box sx={{
+                      border: '1px solid #e0e0e0',
+                      borderRadius: 1,
+                      p: 3,
+                      backgroundColor: 'rgba(49, 188, 212, 0.02)',
+                      minHeight: 280
+                    }}>
+                      <CategoryEcLinks cardSize="medium" />
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          )}
+        </Box>
       </Box>
     </>
   );

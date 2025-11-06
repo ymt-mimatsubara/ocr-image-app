@@ -413,14 +413,14 @@ const OrderCategoryChart: React.FC = () => {
       {/* サマリー情報 */}
       <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
         <Chip 
-          label={`総売上: ${formatCurrency(totalAmount)}`}
-          color="primary"
-          variant="outlined"
+          label={`総注文: ${formatCurrency(totalAmount)}`}
+          color="success"
+          variant="filled"
         />
         <Chip 
           label={`総注文数: ${totalOrders}件`}
-          color="secondary"
-          variant="outlined"
+          color="info"
+          variant="filled"
         />
       </Stack>
 

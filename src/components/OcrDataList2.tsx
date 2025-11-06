@@ -25,6 +25,7 @@ import {
     Chip,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import CloseIcon from '@mui/icons-material/Close';
 import { StorageImage } from '@aws-amplify/ui-react-storage';
 import '@aws-amplify/ui-react/styles.css';
 
@@ -43,6 +44,12 @@ type DeleteState = {
     itemToDelete: OcrDataType | null;
 };
 
+type ImageZoomState = {
+    open: boolean;
+    imageSrc: string;
+    imageAlt: string;
+};
+
 const client = generateClient<Schema>();
 
 // カテゴリ別カラー定義
@@ -53,18 +60,37 @@ const CATEGORY_STYLES = {
     'その他': { backgroundColor: '#FF8042', color: '#FFFFFF' }
 } as const;
 
+// ========================================
 // ユーティリティ関数
+// ========================================
+
+/**
+ * OCRデータを作成日時の降順でソートする
+ * @param items - ソート対象のOCRデータ配列
+ * @returns 作成日時の新しい順にソートされた配列
+ */
 const sortByCreatedAt = (items: OcrDataType[]) => {
     return [...items].sort((a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 };
 
+/**
+ * テキストを指定した長さで切り詰める
+ * @param text - 切り詰める対象のテキスト
+ * @param maxLength - 最大文字数
+ * @returns 切り詰められたテキスト（長い場合は末尾に...を追加）
+ */
 const truncateText = (text: string, maxLength: number) => {
     if (!text) return '';
     return text.length > maxLength ? `${text.substring(0, maxLength)}...` : text;
 };
 
+/**
+ * 数値を日本円の通貨フォーマットで表示する
+ * @param value - フォーマットする数値
+ * @returns 日本円フォーマットされた文字列（例: ¥1,000）
+ */
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('ja-JP', {
         style: 'currency',
@@ -72,7 +98,24 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
+/**
+ * OCRデータリストコンポーネント
+ * 
+ * 機能:
+ * - OCRデータ（注文ヘッダー）の一覧表示
+ * - ページネーション機能
+ * - 詳細モーダル表示（基本情報、金額情報、画像、注文詳細）
+ * - 画像拡大表示機能
+ * - データの削除機能
+ * - リアルタイム更新（サブスクリプション）
+ * 
+ * @returns OCRデータリストのJSX要素
+ */
 export default function OcrDataList() {
+    // ========================================
+    // 状態管理
+    // ========================================
+    
     // データ管理の状態
     const [ocrData, setOcrData] = useState<OcrDataType[]>([]);
     const [loading, setLoading] = useState(true);
@@ -96,7 +139,21 @@ export default function OcrDataList() {
         itemToDelete: null
     });
 
-    // OrderDetail取得関数
+    // 画像拡大状態
+    const [imageZoomState, setImageZoomState] = useState<ImageZoomState>({
+        open: false,
+        imageSrc: '',
+        imageAlt: ''
+    });
+
+    // ========================================
+    // データ取得関数
+    // ========================================
+
+    /**
+     * 指定された注文ヘッダーIDに紐づく注文詳細データを取得する
+     * @param orderHeaderId - 注文ヘッダーのID
+     */
     const fetchOrderDetails = useCallback(async (orderHeaderId: string) => {
         try {
             setLoadingDetails(true);
@@ -116,7 +173,9 @@ export default function OcrDataList() {
         }
     }, []);
 
-    // カスタムフック：OCRデータ取得
+    /**
+     * OCRデータ（注文ヘッダー）を取得し、作成日時順にソートして状態に設定する
+     */
     const fetchOcrData = useCallback(async () => {
         setLoading(true);
         const { data: items } = await client.models.OrderHeader.list();
@@ -128,7 +187,10 @@ export default function OcrDataList() {
         fetchOcrData();
     }, [fetchOcrData]);
 
-    // リアルタイム更新のためのサブスクリプション
+    /**
+     * リアルタイム更新のためのサブスクリプション設定
+     * OrderHeaderテーブルの変更を監視し、データが更新されたら自動的にUIを更新する
+     */
     useEffect(() => {
         const subscription = client.models.OrderHeader.observeQuery().subscribe({
             next: ({ items }) => {
@@ -139,16 +201,32 @@ export default function OcrDataList() {
         return () => subscription.unsubscribe();
     }, []);
 
-    // イベントハンドラー
+    // ========================================
+    // イベントハンドラー関数
+    // ========================================
+    /**
+     * ページネーション：ページ番号変更時のハンドラー
+     * @param _ - 未使用のパラメータ
+     * @param newPage - 新しいページ番号
+     */
     const handleChangePage = useCallback((_: unknown, newPage: number) => {
         setPage(newPage);
     }, []);
 
+    /**
+     * ページネーション：1ページあたりの表示件数変更時のハンドラー
+     * @param event - 変更イベント
+     */
     const handleChangeRowsPerPage = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         setRowsPerPage(parseInt(event.target.value, 10));
         setPage(0);
     }, []);
 
+    /**
+     * テーブル行クリック時のハンドラー
+     * 詳細モーダルを開き、該当する注文詳細データを取得する
+     * @param item - クリックされたOCRデータアイテム
+     */
     const handleRowClick = useCallback((item: OcrDataType) => {
         setModalState({
             open: true,
@@ -159,6 +237,10 @@ export default function OcrDataList() {
         fetchOrderDetails(item.orderId);
     }, [fetchOrderDetails]);
 
+    /**
+     * 詳細モーダルを閉じるハンドラー
+     * モーダル状態をリセットし、注文詳細データをクリアする
+     */
     const handleCloseModal = useCallback(() => {
         setModalState({
             open: false,
@@ -169,6 +251,12 @@ export default function OcrDataList() {
         setOrderDetails([]);
     }, []);
 
+    /**
+     * 削除ボタンクリック時のハンドラー
+     * 削除確認ダイアログを表示する
+     * @param event - クリックイベント
+     * @param item - 削除対象のOCRデータアイテム
+     */
     const handleDeleteClick = useCallback((event: React.MouseEvent, item: OcrDataType) => {
         event.stopPropagation();
         setDeleteState({
@@ -178,6 +266,9 @@ export default function OcrDataList() {
         });
     }, []);
 
+    /**
+     * 削除確認ダイアログを閉じるハンドラー
+     */
     const handleCloseDeleteDialog = useCallback(() => {
         setDeleteState({
             dialogOpen: false,
@@ -186,6 +277,10 @@ export default function OcrDataList() {
         });
     }, []);
 
+    /**
+     * 削除確認後の実際の削除処理を実行するハンドラー
+     * OrderDetailとOrderHeaderを順次削除し、UIを更新する
+     */
     const handleConfirmDelete = useCallback(async () => {
         if (!deleteState.itemToDelete) return;
 
@@ -238,13 +333,52 @@ export default function OcrDataList() {
         }
     }, [deleteState.itemToDelete, modalState]);
 
-    // メモ化された値
+    /**
+     * 画像クリック時のハンドラー
+     * 画像拡大モーダルを開く
+     * @param imageSrc - 画像のパス
+     * @param imageAlt - 画像のaltテキスト
+     */
+    const handleImageClick = useCallback((imageSrc: string, imageAlt: string) => {
+        setImageZoomState({
+            open: true,
+            imageSrc,
+            imageAlt
+        });
+    }, []);
+
+    /**
+     * 画像拡大モーダルを閉じるハンドラー
+     */
+    const handleCloseImageZoom = useCallback(() => {
+        setImageZoomState({
+            open: false,
+            imageSrc: '',
+            imageAlt: ''
+        });
+    }, []);
+
+    // ========================================
+    // メモ化された値・計算プロパティ
+    // ========================================
+
+    /**
+     * ページネーションに基づいて表示するデータを計算
+     * 現在のページと1ページあたりの表示件数に応じてデータをスライスする
+     */
     const displayedData = useMemo(() =>
         ocrData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
         [ocrData, page, rowsPerPage]
     );
 
-    // OrderDetailテーブルコンポーネント
+    // ========================================
+    // コンポーネント関数
+    // ========================================
+
+    /**
+     * 注文詳細テーブルコンポーネント
+     * ローディング状態、データ有無に応じて適切な表示を行う
+     */
     const OrderDetailTable = useCallback(() => {
         if (loadingDetails) {
             return (
@@ -309,7 +443,65 @@ export default function OcrDataList() {
         );
     }, [loadingDetails, orderDetails]);
 
-    // 詳細モーダルコンポーネント
+    /**
+     * 画像拡大モーダルコンポーネント
+     * 画像をフルスクリーンで表示し、クリックで閉じる機能を提供
+     */
+    const ImageZoomModal = useCallback(() => (
+        <Modal 
+            open={imageZoomState.open} 
+            onClose={handleCloseImageZoom}
+            sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+            }}
+        >
+            <Box
+                sx={{
+                    position: 'relative',
+                    maxWidth: '95vw',
+                    maxHeight: '95vh',
+                    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                    borderRadius: 1,
+                    p: 1
+                }}
+                onClick={handleCloseImageZoom}
+            >
+                <StorageImage
+                    alt={imageZoomState.imageAlt}
+                    path={imageZoomState.imageSrc}
+                    style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                        cursor: 'pointer'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                />
+                <IconButton
+                    onClick={handleCloseImageZoom}
+                    sx={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                        '&:hover': {
+                            backgroundColor: 'rgba(255, 255, 255, 0.9)'
+                        }
+                    }}
+                >
+                    <CloseIcon />
+                </IconButton>
+            </Box>
+        </Modal>
+    ), [imageZoomState, handleCloseImageZoom]);
+
+    /**
+     * 詳細モーダルコンポーネント
+     * 選択されたOCRデータの詳細情報を表示する
+     * 基本情報、金額情報、画像、注文詳細一覧を含む
+     */
     const DetailModal = useCallback(() => {
         if (!modalState.selectedItem) return null;
 
@@ -430,7 +622,16 @@ export default function OcrDataList() {
                                                 maxWidth: '100%',
                                                 maxHeight: '500px',
                                                 objectFit: 'contain',
-                                                borderRadius: '4px'
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                                transition: 'transform 0.2s ease-in-out'
+                                            }}
+                                            onClick={() => handleImageClick(selectedItem.documentUri, selectedItem.documentName || 'OCR処理画像')}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.transform = 'scale(1.02)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.transform = 'scale(1)';
                                             }}
                                         />
                                     ) : (
@@ -485,9 +686,13 @@ export default function OcrDataList() {
                 </Paper>
             </Modal>
         );
-    }, [modalState, orderDetails, handleCloseModal, OrderDetailTable]);
+    }, [modalState, orderDetails, handleCloseModal, OrderDetailTable, handleImageClick]);
 
-    // メインコンテンツ
+    /**
+     * メインコンテンツコンポーネント
+     * ローディング状態、データ有無に応じて適切な表示を行う
+     * データがある場合はテーブルとページネーションを表示
+     */
     const MainContent = useCallback(() => {
         if (loading) {
             return (
@@ -533,7 +738,11 @@ export default function OcrDataList() {
         );
     }, [loading, ocrData.length, displayedData, handleRowClick, handleDeleteClick, page, rowsPerPage, handleChangePage, handleChangeRowsPerPage]);
 
-    // データテーブルコンポーネント
+    /**
+     * データテーブルコンポーネント
+     * OCRデータの一覧をテーブル形式で表示
+     * 各行はクリック可能で、削除ボタンも含む
+     */
     const DataTable = useCallback(({
         data,
         onRowClick,
@@ -628,12 +837,17 @@ export default function OcrDataList() {
         </TableContainer>
     ), []);
 
+    // ========================================
+    // メインコンポーネントのレンダリング
+    // ========================================
+
     return (
         <>
             <Box>
                 <MainContent />
             </Box>
             <DetailModal />
+            <ImageZoomModal />
 
             {/* 削除確認ダイアログ */}
             <Dialog
