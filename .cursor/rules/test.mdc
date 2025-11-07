@@ -1,9 +1,0 @@
----
-description:
-globs:
-alwaysApply: true
----
-
-# フロントエンド規約
-- ファイル名はケバブケースにする (例: user-profile.tsx)
-- Reactは関数コンポーネント + Hooks を必須にする

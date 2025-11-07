@@ -1,0 +1,279 @@
+---
+description: Apply only under the source directory and in the parts used by the frontend.
+alwaysApply: false
+---
+## UI Framework
+
+### MUI Grid V7
+```tsx
+// 基本
+<Grid size={12}></Grid>
+// レスポンシブ
+<Grid size={{ xs: 12, md: 6 }}></Grid>
+// スタイリング
+<Grid size={12} sx={{ padding: 2, backgroundColor: 'grey.100' }}>
+```
+### UI/UX 原則・考え方（食品製造業向け共通化）
+- **安全第一**: 重要操作には二段階確認・Undo機能必須（例: 出荷確定、原料ロット消費）
+- **現場視認性**: 最小44×44pxクリック領域、高コントラスト、誤操作防止
+- **データ一貫性**: ロット/期限/温度/アレルゲン等の共通属性テンプレ化
+- **学習容易性**: 主要操作は3クリック以内で到達可能
+- **低ITリテラシー配慮**: 分かりやすい文言、IT用語回避、短く統一された表現
+- **障害耐性**: オフライン一時保存、再送キュー、視覚的ステータス表示
+- **可監査性**: 変更履歴の可視化（誰が/いつ/何を）
+
+### UI実装ガイドライン
+```tsx
+// 安全第一 - 重要操作の確認
+<Button onClick={handleCriticalAction} 
+  sx={{ minWidth: 44, minHeight: 44 }}
+  // 二段階確認が必要な操作
+/>
+
+// 現場視認性 - 最小クリック領域
+<IconButton sx={{ minWidth: 44, minHeight: 44, fontSize: 'large' }}>
+
+// 学習容易性 - 3クリック以内のナビゲーション設計
+<Breadcrumbs maxItems={3} />
+
+// 低ITリテラシー配慮 - 分かりやすい文言
+<Button>保存する</Button> // ❌ "Save" ✅ "保存する"
+<Typography>データを登録しますか？</Typography> // ❌ "Execute SQL" ✅ "データを登録しますか？"
+```
+
+### レイアウト＆ナビゲーション原則（食品製造業向け共通化）
+- **3階層制限**: ナビゲーション階層は3階層以上にしない - 深い場合はタブで整理
+- **現在位置の明確化**: 左メニュー選択状態の太字・ハイライト、コンテンツエリアトップに現在位置表示
+- **パンくずリスト代替**: 戻るボタン設置、階層よりタブ設計を優先
+- **レスポンシブ3段階**: 1280px+（2カラム）/ 960-1279px（折畳み）/ <960px（モバイルドロワー）
+- **サイドバー統一**: 幅240px、行高48px、アイコン24px、左余白12px
+- **ヘッダー構成**: 左（メニュー・ロゴ・タイトル）中央（空）右（ユーザー・通知）
+
+### レイアウト実装ガイドライン
+```tsx
+// サイドバー設定（AppShell使用）
+const DRAWER_WIDTH = 240; // Atlassian仕様
+const COLLAPSED_WIDTH = 72; // 折りたたみ時
+
+// ナビゲーション項目の統一スタイル
+<ListItem sx={{ height: 48 }}> // 行高48px統一
+  <ListItemIcon sx={{ minWidth: 36 }}> // アイコン24px + 余白12px
+    <Icon sx={{ fontSize: 24 }} /> // アイコンサイズ統一
+  </ListItemIcon>
+  <ListItemText primary={label} />
+</ListItem>
+
+// 選択状態の表現
+<ListItem selected={isActive} sx={{
+  '&.Mui-selected': {
+    backgroundColor: '#E9F2FF', // 薄いPrimary背景
+    borderLeft: '3px solid #1976D2', // 左帯
+    '& .MuiListItemIcon-root': { color: '#1976D2' }, // Primaryアイコン
+    '& .MuiListItemText-primary': { color: '#1976D2', fontWeight: 'bold' }
+  }
+}}>
+
+// レスポンシブブレークポイント活用
+const isDesktop = useMediaQuery('(min-width: 1280px)');
+const isTablet = useMediaQuery('(min-width: 960px)');
+```
+
+### コンポーネント使用ルール（食品製造業向け共通化）
+- **Button**: variant と color を必ず明示、1画面1つのPrimary原則
+- **フォーム**: エラーメッセージは短く具体的、ユーザー語彙で解決手段提供
+- **テーブル**: 全一覧画面はDataGrid統一、行高44px、ソート/フィルタ保存可能
+- **ダイアログ**: 1-2アクション集約、画面遷移なし、軽量UI
+- **モーダル**: 3階層回避時使用、大きな領域・複雑操作向け
+- **通知**: 優先度段階化（インライン < アラート < スナックバー < ダイアログ）
+- **ステータスバッジ**: 色だけでなくテキスト併記、意味統一（緑=正常、黄=注意、赤=エラー）
+
+### コンポーネント実装ガイドライン
+```tsx
+// Button - variant/color必須、1画面1つのPrimary
+<Button variant="contained" color="primary">保存</Button> // 主要操作
+<Button variant="outlined" color="secondary">戻る</Button> // 副次操作
+<Button variant="text" color="primary">ヘルプ</Button> // 補足リンク
+<Button variant="contained" color="error">削除</Button> // 危険操作+確認必須
+
+// フォーム - エラーメッセージ統一
+<TextField 
+  error={hasError}
+  helperText="期限が本日以前です。日付を確認してください。" // 具体的・短文
+  label="賞味期限 *" // 必須項目には*
+/>
+
+// テーブル - DataGrid統一
+<DataGrid 
+  rowHeight={44} // 標準行高
+  density="standard" // 標準密度
+/>
+
+// ダイアログ - 軽量UI
+<Dialog maxWidth="sm" fullWidth>
+  <DialogTitle autoFocus>削除確認</DialogTitle> // 1-2アクション集約
+</Dialog>
+
+// ステータスバッジ - 色+テキスト
+<Chip color="success" label="稼働中" size="small" /> // 緑+テキスト
+<Chip color="warning" label="期限間近" size="small" /> // 黄+テキスト
+<Chip color="error" label="在庫切れ" size="small" /> // 赤+テキスト
+```
+
+### 状態設計ガイドライン（食品製造業向け共通化）
+**目的**: 安心感の提供、業務中断の最小化、正しい判断をサポート
+
+#### ローディング状態
+- **原則**: 必ず動きのあるインジケータ、局所的配置優先、フリーズ印象回避
+- **優先順**: スケルトン > 局所スピナー > ページ全体スピナー（避ける）
+- **実装**: データ表示場所を直感的にわかるようにする
+
+```tsx
+// ✅ スケルトン優先（データテーブル、カード一覧）
+<Skeleton variant="rectangular" width="100%" height={44} />
+
+// ✅ 局所的スピナー（ボタン内、小さな更新領域）
+<Button loading sx={{ minWidth: 44, minHeight: 44 }}>
+  保存中...
+</Button>
+
+// ❌ ページ全体スピナー（避ける）
+// <CircularProgress fullscreen />
+```
+
+#### オフライン状態
+- **表示**: 画面上部バナー固定、再送キュー数表示、自動復旧対応
+- **原則**: 作業への影響明示、ローカル保存、視覚的ステータス
+
+```tsx
+// バナー固定表示
+<Alert severity="warning" sx={{ position: 'fixed', top: 0, width: '100%', zIndex: 1000 }}>
+  オフラインです。入力内容は一時保存中です（再送待ち: 3件）
+</Alert>
+
+// アイコン状態表示
+<Icon>{isOnline ? 'wifi' : 'wifi_off'}</Icon>
+```
+
+#### エラー状態
+- **階層**: 行内インライン → パネル内通知 → 全体エラー画面
+- **原則**: 作業を止めない、原因→対処構造、ユーザー語彙使用
+
+```tsx
+// 行内インライン（優先度1）
+<TableCell sx={{ color: 'error.main' }}>期限切れ</TableCell>
+
+// パネル内通知（優先度2）
+<Alert severity="error" sx={{ mb: 2 }}>
+  期限が本日以前です。日付を確認してください。
+</Alert>
+
+// 全体エラー画面（最終手段）
+<ErrorBoundary fallback={<ErrorPage />} />
+```
+
+### アクセシビリティ詳細ルール（食品製造業向け共通化）
+**目的**: ITリテラシーに関わらず誰でも使えるUI、認知負荷軽減
+
+#### 色とコントラスト
+- **コントラスト比**: 本文4.5:1以上、大型UI3:1以上（WCAG準拠）
+- **色依存禁止**: 色+アイコン+テキストで状態併記必須
+
+```tsx
+// ✅ 色だけに依存しない表現
+<Chip 
+  color="error" 
+  icon={<ErrorIcon />} 
+  label="在庫切れ" 
+  size="small" 
+/>
+
+// ❌ 色のみの表現
+// <Box sx={{ backgroundColor: 'error.main' }} />
+```
+
+#### ARIA・スクリーンリーダー対応
+- **必須**: アイコンボタンaria-label、ダイアログrole="dialog"
+- **活用**: aria-live="polite"、aria-labelledby/describedby
+
+```tsx
+// アイコンボタン - aria-label必須
+<IconButton aria-label="削除" sx={{ minWidth: 44, minHeight: 44 }}>
+  <DeleteIcon />
+</IconButton>
+
+// ダイアログ - role と labelledby/describedby
+<Dialog 
+  role="dialog"
+  aria-labelledby="dialog-title"
+  aria-describedby="dialog-description"
+>
+  <DialogTitle id="dialog-title">削除確認</DialogTitle>
+  <DialogContent id="dialog-description">
+    この操作は取り消せません。
+  </DialogContent>
+</Dialog>
+
+// ステータス領域 - aria-live
+<Box aria-live="polite" aria-label="同期状況">
+  同期中...
+</Box>
+```
+
+#### エラーメッセージ統一
+- **構造**: 原因 → 対処（短く具体的）
+- **語彙**: 業務用語統一（製造/前処理/包装、製品）
+
+```tsx
+// ✅ 原因→対処構造、業務語彙
+<TextField 
+  error={hasError}
+  helperText="期限が本日以前です。日付を確認してください。"
+  label="賞味期限 *"
+/>
+
+// ✅ 業務用語統一例
+// ✅ 製造（❌生産） ✅製品（❌商品） ✅前処理 ✅包装
+```
+
+#### フォーマット・表示統一
+- **日付**: yyyy/MM/dd、時刻: HH:mm（和暦非対応）
+- **数値**: 半角数字、3桁区切り、tabular-nums等幅
+- **単位**: SI単位系（℃、g/kg、ml/L）、金額￥表示なし
+
+```tsx
+// 日付・時刻表示
+<Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>
+  2024/12/31 14:30
+</Typography>
+
+// 数値・単位表示（等幅数字）
+<Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>
+  温度: 25℃　重量: 1,234kg　容量: 500ml
+</Typography>
+
+// テーブル単位表示（右上）
+<TableHead>
+  <TableCell align="right">重量(kg)</TableCell>
+  <TableCell align="right">温度(℃)</TableCell>
+</TableHead>
+```
+
+## Amplify Data Client
+
+### 禁止事項
+- `client.models.[Model].list()`（フルスキャン回避）
+
+### 推奨パターン
+```tsx
+// 特定取得
+const { data } = await client.models.Todo.get({ id });
+// フィルタ付きクエリ
+const { data } = await client.models.Todo.list({
+  filter: { userId: { eq: currentUserId } }
+});
+```
+
+### 許可条件
+- マスタデータ全件取得
+- 管理画面一覧（件数限定）
+- 明示的な全件取得必要性確認済み
